@@ -49,10 +49,10 @@ Rules:
 
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-    // Initialize stream first before sending headers
+    // Using active Groq model ID
     const stream = await groq.chat.completions.create({
       messages: finalMessages,
-      model: 'llama-3.1-8b-instant',
+      model: 'llama-3.3-70b-versatile',
       stream: true,
     });
 
