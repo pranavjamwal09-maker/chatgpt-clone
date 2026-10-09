@@ -25,6 +25,10 @@ router.post('/message', auth, async (req, res) => {
     }
 
     const apiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
+    if (!apiKey) {
+      return res.status(400).json({ error: 'GEMINI_API_KEY is missing in Render environment variables' });
+    }
+
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
       model: "gemini-1.5-flash",
@@ -44,6 +48,9 @@ Rules:
 
     const chatSession = model.startChat({ history });
 
+    // Call API Stream FIRST before setting headers so errors are caught properly
+    const result = await chatSession.sendMessageStream(prompt);
+
     // Set headers for SSE & Disable Render proxy buffering
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -51,7 +58,6 @@ Rules:
     res.setHeader('X-Accel-Buffering', 'no');
     if (res.flushHeaders) res.flushHeaders();
 
-    const result = await chatSession.sendMessageStream(prompt);
     let fullAiText = '';
 
     for await (const chunk of result.stream) {
@@ -75,12 +81,13 @@ Rules:
     if (!res.headersSent) {
       res.status(500).json({ error: err.message || 'Server Error' });
     } else {
+      res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
       res.end();
     }
   }
 });
 
-// Get All User Chats
+// Get All User Chats (Sidebar)
 router.get('/history', auth, async (req, res) => {
   try {
     const chats = await Chat.find({ userId: req.user.id }).select('title createdAt').sort({ updatedAt: -1 });
