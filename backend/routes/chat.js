@@ -6,51 +6,7 @@ const Groq = require('groq-sdk');
 
 const router = express.Router();
 
-// Fetch live active models dynamically from Groq
-async function getGroqResponse(formattedMessages) {
-  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
-  let candidateModels = [];
-
-  try {
-    // Groq API se live active models ki list fetch karna
-    const modelList = await groq.models.list();
-    candidateModels = modelList.data
-      .map(m => m.id)
-      .filter(id => !id.includes('whisper') && !id.includes('safetensors'));
-
-    console.log('[GROQ ACTIVE MODELS AVAILABLE]:', candidateModels);
-  } catch (err) {
-    console.warn('[GROQ LIST FETCH ERROR]: Using default fallback array');
-  }
-
-  // Backup fallback list if dynamic fetch fails
-  if (!candidateModels.length) {
-    candidateModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-8b-8192'];
-  }
-
-  let lastErr = null;
-  for (const modelName of candidateModels) {
-    try {
-      console.log(`[GROQ TRYING MODEL]: ${modelName}`);
-      const completion = await groq.chat.completions.create({
-        messages: formattedMessages,
-        model: modelName,
-      });
-      const text = completion.choices[0]?.message?.content;
-      if (text) {
-        console.log(`[GROQ SUCCESS] Model used: ${modelName}`);
-        return text;
-      }
-    } catch (err) {
-      console.warn(`[GROQ MODEL FAILED] ${modelName}: ${err.message}`);
-      lastErr = err;
-    }
-  }
-  throw lastErr || new Error('All Groq models failed.');
-}
-
-// Send Message / Generate AI Response
+// Send Message with SSE Streaming & Strict System Prompt
 router.post('/message', auth, async (req, res) => {
   try {
     const { chatId, prompt } = req.body;
@@ -68,29 +24,73 @@ router.post('/message', auth, async (req, res) => {
       });
     }
 
-    // Format chat history for Groq
+    // Format previous messages for history
     const formattedMessages = chat.messages.map(m => ({
       role: m.role === 'user' ? 'user' : 'assistant',
       content: m.content
     }));
 
-    formattedMessages.push({ role: 'user', content: prompt });
+    // Strict System Prompt to fix formatting, language, and response length
+    const systemInstruction = {
+      role: 'system',
+      content: `You are a helpful, smart AI assistant.
+Rules:
+1. NEVER start responses with random numbers, debug codes, or special symbols.
+2. Always respond in the EXACT same language and script used by the user. If the user talks in Hinglish (Roman Hindi), reply strictly in clean Hinglish or English. NEVER switch to Urdu or Arabic script.
+3. Match response length strictly to query complexity. For short or daily questions, give concise 1-2 sentence answers. Do not write 100-word answers unless explicitly asked.
+4. Format all text cleanly using standard Markdown.`
+    };
+
+    const finalMessages = [
+      systemInstruction,
+      ...formattedMessages,
+      { role: 'user', content: prompt }
+    ];
+
+    // Set headers for Server-Sent Events (SSE) Streaming
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+    // Enable streaming from Groq API
+    const stream = await groq.chat.completions.create({
+      messages: finalMessages,
+      model: 'llama-3.1-8b-instant',
+      stream: true,
+    });
+
+    let fullAiText = '';
+
+    // Stream chunks in real-time to frontend
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      if (content) {
+        fullAiText += content;
+        res.write(`data: ${JSON.stringify({ text: content, chatId: chat._id })}\n\n`);
+      }
+    }
+
+    // Save full conversation to MongoDB after stream ends
     chat.messages.push({ role: 'user', content: prompt });
-
-    // Fetch AI response
-    const aiText = await getGroqResponse(formattedMessages);
-
-    chat.messages.push({ role: 'model', content: aiText });
+    chat.messages.push({ role: 'assistant', content: fullAiText });
     await chat.save();
 
-    res.json({ chatId: chat._id, messages: chat.messages });
+    res.write('data: [DONE]\n\n');
+    res.end();
+
   } catch (err) {
-    console.error('=== CHAT API ERROR ===\n', err);
-    res.status(500).json({ error: err.message || 'Server Error' });
+    console.error('=== STREAMING CHAT ERROR ===\n', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message || 'Server Error' });
+    } else {
+      res.end();
+    }
   }
 });
 
-// Get All User Chats
+// Get All User Chats (Sidebar)
 router.get('/history', auth, async (req, res) => {
   try {
     const chats = await Chat.find({ userId: req.user.id }).select('title createdAt').sort({ updatedAt: -1 });
@@ -113,7 +113,7 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-// Delete Chat
+// Delete Chat Session
 router.delete('/:id', auth, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
