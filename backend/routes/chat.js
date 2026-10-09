@@ -30,8 +30,10 @@ router.post('/message', auth, async (req, res) => {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
+    
+    // Official active Gemini model
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash-latest",
       systemInstruction: `You are a helpful, smart AI assistant.
 Rules:
 1. NEVER start responses with random numbers, debug codes, or special symbols.
@@ -87,7 +89,7 @@ Rules:
   }
 });
 
-// Get All User Chats (Sidebar)
+// Get All User Chats
 router.get('/history', auth, async (req, res) => {
   try {
     const chats = await Chat.find({ userId: req.user.id }).select('title createdAt').sort({ updatedAt: -1 });
