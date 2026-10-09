@@ -2,7 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 const Chat = require('../models/Chat');
-const Groq = require('groq-sdk');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const router = express.Router();
 
@@ -24,38 +24,25 @@ router.post('/message', auth, async (req, res) => {
       });
     }
 
-    // Format previous messages for chat history
-    const formattedMessages = chat.messages.map(m => ({
-      role: m.role === 'user' ? 'user' : 'assistant',
-      content: m.content
-    }));
-
-    // Strict System Prompt
-    const systemInstruction = {
-      role: 'system',
-      content: `You are a helpful, smart AI assistant.
+    const apiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      systemInstruction: `You are a helpful, smart AI assistant.
 Rules:
 1. NEVER start responses with random numbers, debug codes, or special symbols.
 2. Always respond in the EXACT same language and script used by the user. If the user talks in Hinglish (Roman Hindi), reply strictly in clean Hinglish or English. NEVER switch to Urdu or Arabic script.
 3. Match response length strictly to query complexity. For short or daily questions, give concise 1-2 sentence answers. Do not write long answers unless explicitly asked.
 4. Format all text cleanly using standard Markdown.`
-    };
-
-    const finalMessages = [
-      systemInstruction,
-      ...formattedMessages,
-      { role: 'user', content: prompt }
-    ];
-
-    const apiKey = process.env.GROQ_API_KEY ? process.env.GROQ_API_KEY.trim() : '';
-    const groq = new Groq({ apiKey });
-
-    // Direct single active flagship model
-    const stream = await groq.chat.completions.create({
-      messages: finalMessages,
-      model: 'llama-3.3-70b-versatile',
-      stream: true,
     });
+
+    // Format previous messages for chat history
+    const history = chat.messages.map(m => ({
+      role: m.role === 'user' ? 'user' : 'model',
+      parts: [{ text: m.content }]
+    }));
+
+    const chatSession = model.startChat({ history });
 
     // Set headers for SSE & Disable Render proxy buffering
     res.setHeader('Content-Type', 'text/event-stream');
@@ -64,14 +51,14 @@ Rules:
     res.setHeader('X-Accel-Buffering', 'no');
     if (res.flushHeaders) res.flushHeaders();
 
+    const result = await chatSession.sendMessageStream(prompt);
     let fullAiText = '';
 
-    // Stream chunks in real-time to frontend
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content || '';
-      if (content) {
-        fullAiText += content;
-        res.write(`data: ${JSON.stringify({ text: content, chatId: chat._id })}\n\n`);
+    for await (const chunk of result.stream) {
+      const chunkText = chunk.text();
+      if (chunkText) {
+        fullAiText += chunkText;
+        res.write(`data: ${JSON.stringify({ text: chunkText, chatId: chat._id })}\n\n`);
       }
     }
 
@@ -93,7 +80,7 @@ Rules:
   }
 });
 
-// Get All User Chats (Sidebar)
+// Get All User Chats
 router.get('/history', auth, async (req, res) => {
   try {
     const chats = await Chat.find({ userId: req.user.id }).select('title createdAt').sort({ updatedAt: -1 });
