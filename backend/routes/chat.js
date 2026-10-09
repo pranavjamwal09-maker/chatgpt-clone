@@ -31,7 +31,7 @@ router.post('/message', auth, async (req, res) => {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       systemInstruction: `You are a helpful, smart AI assistant.
 Rules:
 1. NEVER start responses with random numbers, debug codes, or special symbols.
@@ -48,7 +48,7 @@ Rules:
 
     const chatSession = model.startChat({ history });
 
-    // Call API Stream FIRST before setting headers so errors are caught properly
+    // Call API Stream FIRST before setting headers
     const result = await chatSession.sendMessageStream(prompt);
 
     // Set headers for SSE & Disable Render proxy buffering
