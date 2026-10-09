@@ -30,7 +30,7 @@ router.post('/message', auth, async (req, res) => {
       content: m.content
     }));
 
-    // Strict System Prompt to fix formatting, language, and response length
+    // Strict System Prompt
     const systemInstruction = {
       role: 'system',
       content: `You are a helpful, smart AI assistant.
@@ -47,19 +47,21 @@ Rules:
       { role: 'user', content: prompt }
     ];
 
-    // Set headers for Server-Sent Events (SSE) Streaming
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-    // Enable streaming from Groq API
+    // Initialize stream first before sending headers
     const stream = await groq.chat.completions.create({
       messages: finalMessages,
       model: 'llama-3.1-8b-instant',
       stream: true,
     });
+
+    // Set headers for SSE & Disable Render proxy buffering
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (res.flushHeaders) res.flushHeaders();
 
     let fullAiText = '';
 

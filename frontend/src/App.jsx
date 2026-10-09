@@ -67,7 +67,7 @@ export default function App() {
     setMessages([]);
   };
 
-  // Streaming Message Handler (Typewriter Chunks Effect)
+  // Streaming Message Handler with Error Checks
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
@@ -76,7 +76,7 @@ export default function App() {
     setInput('');
     setLoading(true);
 
-    // Instant UI update: Add User message and empty Assistant placeholder
+    // Instant UI update
     setMessages(prev => [
       ...prev,
       { role: 'user', content: userPrompt },
@@ -93,6 +93,14 @@ export default function App() {
         body: JSON.stringify({ chatId: activeChatId, prompt: userPrompt })
       });
 
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        alert(errData.error || 'Server error occurred while streaming response.');
+        setMessages(prev => prev.slice(0, -1)); // Remove blank message
+        setLoading(false);
+        return;
+      }
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let aiText = '';
@@ -101,7 +109,7 @@ export default function App() {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
+        const chunk = decoder.decode(value, { stream: true });
         const lines = chunk.split('\n');
 
         for (const line of lines) {
@@ -114,7 +122,6 @@ export default function App() {
               if (parsed.text) {
                 aiText += parsed.text;
 
-                // Update the last assistant message in real-time
                 setMessages(prev => {
                   const updated = [...prev];
                   updated[updated.length - 1] = {
@@ -137,12 +144,13 @@ export default function App() {
       }
     } catch (err) {
       console.error('Streaming error:', err);
+      alert('Network error: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Authentication UI
+  // Auth View
   if (!token) {
     return (
       <div style={{ display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center', backgroundColor: '#212121', color: '#fff' }}>
@@ -161,7 +169,7 @@ export default function App() {
     );
   }
 
-  // Main Workspace UI
+  // Main UI
   return (
     <div style={{ display: 'flex', height: '100vh', backgroundColor: '#212121', color: '#ececec', fontFamily: 'sans-serif' }}>
       {/* Sidebar */}
@@ -183,7 +191,7 @@ export default function App() {
         </button>
       </div>
 
-      {/* Chat Workspace */}
+      {/* Chat Area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: 1, overflowY: 'auto', padding: '30px 100px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {messages.length === 0 && (
@@ -199,7 +207,7 @@ export default function App() {
           ))}
         </div>
 
-        {/* Prompt Input Form */}
+        {/* Input Form */}
         <form onSubmit={handleSendMessage} style={{ padding: '20px 100px', backgroundColor: '#212121' }}>
           <div style={{ display: 'flex', backgroundColor: '#2f2f2f', borderRadius: '8px', padding: '8px 12px' }}>
             <input type="text" placeholder="Send a message..." value={input} onChange={e => setInput(e.target.value)} style={{ flex: 1, border: 'none', outline: 'none', backgroundColor: 'transparent', color: '#fff', fontSize: '16px', padding: '8px' }} />
