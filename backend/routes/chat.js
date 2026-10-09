@@ -52,7 +52,7 @@ Rules:
     // Groq's most stable, active production model
     const stream = await groq.chat.completions.create({
       messages: finalMessages,
-      model: 'mixtral-8x7b-32768',
+      model: 'llama-3.1-8b-instant',
       stream: true,
     });
 
