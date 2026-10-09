@@ -24,7 +24,7 @@ router.post('/message', auth, async (req, res) => {
       });
     }
 
-    // Format previous messages for history
+    // Format previous messages for chat history
     const formattedMessages = chat.messages.map(m => ({
       role: m.role === 'user' ? 'user' : 'assistant',
       content: m.content
@@ -37,7 +37,7 @@ router.post('/message', auth, async (req, res) => {
 Rules:
 1. NEVER start responses with random numbers, debug codes, or special symbols.
 2. Always respond in the EXACT same language and script used by the user. If the user talks in Hinglish (Roman Hindi), reply strictly in clean Hinglish or English. NEVER switch to Urdu or Arabic script.
-3. Match response length strictly to query complexity. For short or daily questions, give concise 1-2 sentence answers. Do not write 100-word answers unless explicitly asked.
+3. Match response length strictly to query complexity. For short or daily questions, give concise 1-2 sentence answers. Do not write long answers unless explicitly asked.
 4. Format all text cleanly using standard Markdown.`
     };
 
@@ -49,12 +49,22 @@ Rules:
 
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-    // Groq's most stable, active production model
-    const stream = await groq.chat.completions.create({
-      messages: finalMessages,
-      model: 'llama-3.1-8b-instant',
-      stream: true,
-    });
+    // Automatic Fallback System: Flagship model primary, Instant model secondary
+    let stream;
+    try {
+      stream = await groq.chat.completions.create({
+        messages: finalMessages,
+        model: 'llama-3.3-70b-versatile',
+        stream: true,
+      });
+    } catch (modelErr) {
+      console.warn('Primary model failed, falling back to llama-3.1-8b-instant:', modelErr.message);
+      stream = await groq.chat.completions.create({
+        messages: finalMessages,
+        model: 'llama-3.1-8b-instant',
+        stream: true,
+      });
+    }
 
     // Set headers for SSE & Disable Render proxy buffering
     res.setHeader('Content-Type', 'text/event-stream');
