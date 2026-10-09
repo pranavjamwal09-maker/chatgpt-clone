@@ -49,10 +49,10 @@ Rules:
 
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-    // Active Groq Llama 3 model
+    // Guaranteed working Groq model
     const stream = await groq.chat.completions.create({
       messages: finalMessages,
-      model: 'llama-3.1-8b-instant',
+      model: 'llama3-8b-8192',
       stream: true,
     });
 
