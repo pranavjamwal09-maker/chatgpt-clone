@@ -47,24 +47,15 @@ Rules:
       { role: 'user', content: prompt }
     ];
 
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const apiKey = process.env.GROQ_API_KEY ? process.env.GROQ_API_KEY.trim() : '';
+    const groq = new Groq({ apiKey });
 
-    // Automatic Fallback System: Flagship model primary, Instant model secondary
-    let stream;
-    try {
-      stream = await groq.chat.completions.create({
-        messages: finalMessages,
-        model: 'llama-3.3-70b-versatile',
-        stream: true,
-      });
-    } catch (modelErr) {
-      console.warn('Primary model failed, falling back to llama-3.1-8b-instant:', modelErr.message);
-      stream = await groq.chat.completions.create({
-        messages: finalMessages,
-        model: 'llama-3.1-8b-instant',
-        stream: true,
-      });
-    }
+    // Direct single active flagship model
+    const stream = await groq.chat.completions.create({
+      messages: finalMessages,
+      model: 'llama-3.3-70b-versatile',
+      stream: true,
+    });
 
     // Set headers for SSE & Disable Render proxy buffering
     res.setHeader('Content-Type', 'text/event-stream');
