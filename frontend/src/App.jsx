@@ -3,11 +3,20 @@ import React, { useState, useEffect, useRef } from 'react';
 const API_URL = import.meta.env.VITE_API_URL || 'https://chatgpt-clone-web-service.onrender.com';
 
 function App() {
+  const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [chats, setChats] = useState([]);
   const [currentChatId, setCurrentChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  
+  // Auth Form State (Login/Register)
+  const [isLoginView, setIsLoginView] = useState(true);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authName, setAuthName] = useState('');
+  const [authError, setAuthError] = useState('');
+
   const chatEndRef = useRef(null);
 
   // Auto scroll to bottom
@@ -15,14 +24,17 @@ function App() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Load chat history list for sidebar
+  // Load chat history for sidebar when logged in
   const fetchChatHistory = async () => {
+    if (!token) return;
     try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
       const res = await fetch(`${API_URL}/api/chat/history`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (res.status === 401) {
+        handleSignOut();
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         setChats(data);
@@ -33,13 +45,57 @@ function App() {
   };
 
   useEffect(() => {
-    fetchChatHistory();
-  }, []);
+    if (token) {
+      fetchChatHistory();
+    }
+  }, [token]);
+
+  // Sign Out Handler
+  const handleSignOut = () => {
+    localStorage.removeItem('token');
+    setToken('');
+    setChats([]);
+    setCurrentChatId(null);
+    setMessages([]);
+  };
+
+  // Login / Register Submission
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    const endpoint = isLoginView ? '/api/auth/login' : '/api/auth/register';
+    const payload = isLoginView 
+      ? { email: authEmail, password: authPassword }
+      : { name: authName, email: authEmail, password: authPassword };
+
+    try {
+      const res = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setAuthError(data.error || 'Authentication failed');
+        return;
+      }
+
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+        setToken(data.token);
+        setAuthEmail('');
+        setAuthPassword('');
+        setAuthName('');
+      }
+    } catch (err) {
+      setAuthError('Server error. Please try again.');
+    }
+  };
 
   // Load single chat messages
   const selectChat = async (chatId) => {
     try {
-      const token = localStorage.getItem('token');
       setCurrentChatId(chatId);
       const res = await fetch(`${API_URL}/api/chat/${chatId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -59,19 +115,15 @@ function App() {
     setMessages([]);
   };
 
-  // Delete Chat Function
+  // Delete Chat
   const handleDeleteChat = async (e, chatId) => {
     e.stopPropagation();
-
     if (!window.confirm("Kya aap iss chat ko delete karna chahte hain?")) return;
 
     try {
-      const token = localStorage.getItem('token');
       const res = await fetch(`${API_URL}/api/chat/${chatId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (res.ok) {
@@ -97,11 +149,10 @@ function App() {
     setInput('');
     setIsStreaming(true);
 
-    // Push user prompt & placeholder
+    // Push user message and assistant placeholder
     setMessages(prev => [...prev, { role: 'user', content: userPrompt }, { role: 'assistant', content: '' }]);
 
     try {
-      const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/chat/message`, {
         method: 'POST',
         headers: {
@@ -114,11 +165,16 @@ function App() {
         })
       });
 
+      if (response.status === 401) {
+        alert("Session expired. Please sign in again.");
+        handleSignOut();
+        return;
+      }
+
       if (!response.ok) {
-        const errData = await response.json();
+        const errData = await response.json().catch(() => ({}));
         alert(errData.error || 'Failed to get response');
         setIsStreaming(false);
-        // Clear empty assistant boxes on error
         setMessages(prev => prev.filter(m => m.content !== ''));
         return;
       }
@@ -144,6 +200,12 @@ function App() {
 
             try {
               const parsed = JSON.parse(dataStr);
+              if (parsed.error) {
+                alert(`Error: ${parsed.error}`);
+                setIsStreaming(false);
+                setMessages(prev => prev.filter(m => m.content !== ''));
+                return;
+              }
               if (parsed.chatId && !currentChatId) {
                 setCurrentChatId(parsed.chatId);
               }
@@ -161,7 +223,7 @@ function App() {
                 });
               }
             } catch (err) {
-              // Ignore fragment parse errors
+              // Fragment chunk parsing ignore
             }
           }
         }
@@ -174,6 +236,57 @@ function App() {
     }
   };
 
+  // IF NOT LOGGED IN -> RENDER LOGIN / REGISTER VIEW
+  if (!token) {
+    return (
+      <div style={{ display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center', backgroundColor: '#1e1e1e', color: '#fff', fontFamily: 'sans-serif' }}>
+        <form onSubmit={handleAuthSubmit} style={{ width: '320px', padding: '30px', backgroundColor: '#282828', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          <h2 style={{ textAlign: 'center', margin: '0 0 10px 0' }}>{isLoginView ? 'Sign In' : 'Create Account'}</h2>
+          
+          {authError && <div style={{ color: '#ff4d4d', fontSize: '13px', textAlign: 'center' }}>{authError}</div>}
+
+          {!isLoginView && (
+            <input 
+              type="text" 
+              placeholder="Name" 
+              value={authName} 
+              onChange={e => setAuthName(e.target.value)} 
+              required 
+              style={{ padding: '10px', borderRadius: '5px', border: '1px solid #444', backgroundColor: '#1e1e1e', color: '#fff' }}
+            />
+          )}
+
+          <input 
+            type="email" 
+            placeholder="Email" 
+            value={authEmail} 
+            onChange={e => setAuthEmail(e.target.value)} 
+            required 
+            style={{ padding: '10px', borderRadius: '5px', border: '1px solid #444', backgroundColor: '#1e1e1e', color: '#fff' }}
+          />
+
+          <input 
+            type="password" 
+            placeholder="Password" 
+            value={authPassword} 
+            onChange={e => setAuthPassword(e.target.value)} 
+            required 
+            style={{ padding: '10px', borderRadius: '5px', border: '1px solid #444', backgroundColor: '#1e1e1e', color: '#fff' }}
+          />
+
+          <button type="submit" style={{ padding: '10px', backgroundColor: '#10a37f', color: '#fff', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>
+            {isLoginView ? 'Sign In' : 'Register'}
+          </button>
+
+          <p style={{ fontSize: '12px', textAlign: 'center', margin: '5px 0 0 0', cursor: 'pointer', color: '#888' }} onClick={() => setIsLoginView(!isLoginView)}>
+            {isLoginView ? "Don't have an account? Register" : "Already have an account? Sign In"}
+          </p>
+        </form>
+      </div>
+    );
+  }
+
+  // LOGGED IN CHAT INTERFACE
   return (
     <div style={{ display: 'flex', height: '100vh', backgroundColor: '#1e1e1e', color: '#fff', fontFamily: 'sans-serif' }}>
       
@@ -186,6 +299,7 @@ function App() {
           + New Chat
         </button>
 
+        {/* Chat History List */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {chats.map(chat => (
             <div 
@@ -207,7 +321,7 @@ function App() {
                 💬 {chat.title}
               </span>
               
-              {/* Delete Button */}
+              {/* Red Delete Button */}
               <button
                 onClick={(e) => handleDeleteChat(e, chat._id)}
                 style={{
@@ -227,6 +341,25 @@ function App() {
               </button>
             </div>
           ))}
+        </div>
+
+        {/* Sidebar Bottom: Sign Out Button */}
+        <div style={{ paddingTop: '15px', borderTop: '1px solid #333' }}>
+          <button 
+            onClick={handleSignOut}
+            style={{
+              width: '100%',
+              padding: '10px',
+              backgroundColor: '#8b0000',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 'bold'
+            }}
+          >
+            Sign Out
+          </button>
         </div>
       </div>
 
