@@ -6,7 +6,7 @@ const Groq = require('groq-sdk');
 
 const router = express.Router();
 
-// Send Message with Guaranteed Background Persistence on Disconnect
+// Send Message with SSE Streaming & Dynamic Active Model Auto-Detection
 router.post('/message', auth, async (req, res) => {
   let chatIdToUse = req.body.chatId;
   const prompt = req.body.prompt;
@@ -14,7 +14,6 @@ router.post('/message', auth, async (req, res) => {
   try {
     let chat = null;
 
-    // 1. Fetch existing chat or create new one
     if (chatIdToUse && mongoose.Types.ObjectId.isValid(chatIdToUse)) {
       chat = await Chat.findOne({ _id: chatIdToUse, userId: req.user.id });
     }
@@ -29,12 +28,11 @@ router.post('/message', auth, async (req, res) => {
     }
     chatIdToUse = chat._id;
 
-    // Save User message atomically to MongoDB
+    // Save user message atomically
     await Chat.findByIdAndUpdate(chatIdToUse, {
       $push: { messages: { role: 'user', content: prompt } }
     });
 
-    // Clean API Key
     const rawKey = process.env.GROQ_API_KEY || '';
     const apiKey = rawKey.replace(/[^a-zA-Z0-9_]/g, '').trim();
 
@@ -42,14 +40,12 @@ router.post('/message', auth, async (req, res) => {
       return res.status(400).json({ error: 'GROQ_API_KEY is missing in Render environment variables' });
     }
 
-    // Refresh chat messages for context
     const updatedChat = await Chat.findById(chatIdToUse);
     const formattedMessages = updatedChat.messages.map(m => ({
       role: m.role === 'user' ? 'user' : 'assistant',
       content: m.content || ''
     }));
 
-    // System Prompt
     const systemInstruction = {
       role: 'system',
       content: `You are a helpful, smart AI assistant.
@@ -63,7 +59,6 @@ Rules:
     const finalMessages = [systemInstruction, ...formattedMessages];
     const groq = new Groq({ apiKey });
 
-    // Fallback active models
     let candidateModels = [
       'llama-3.3-70b-versatile',
       'llama-3.1-8b-instant',
@@ -105,7 +100,6 @@ Rules:
       throw lastError || new Error('All Groq candidate models failed');
     }
 
-    // Set SSE Headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -115,12 +109,10 @@ Rules:
     let fullAiText = '';
     let isClientConnected = true;
 
-    // Track client disconnection (when user switches chat mid-stream)
     req.on('close', () => {
       isClientConnected = false;
     });
 
-    // Stream chunks
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content || '';
       if (content) {
@@ -135,7 +127,6 @@ Rules:
       }
     }
 
-    // Always persist full AI response to MongoDB even if client disconnected early
     if (fullAiText.trim()) {
       await Chat.findByIdAndUpdate(chatIdToUse, {
         $push: { messages: { role: 'assistant', content: fullAiText } }
@@ -181,14 +172,17 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-// Delete Chat Session
+// Delete Chat Session (Guaranteed Deletion)
 router.delete('/:id', auth, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: 'Invalid Chat ID' });
     }
-    await Chat.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
-    res.json({ success: true });
+    const deletedChat = await Chat.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
+    if (!deletedChat) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+    res.json({ success: true, message: 'Chat deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

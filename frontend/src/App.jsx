@@ -1,222 +1,271 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect, useRef } from 'react';
+import './App.css'; // Make sure styling is imported
 
-// Live Deployed Backend API Base URL
-const API_BASE = 'https://chatgpt-clone-xx1j.onrender.com/api';
+const API_URL = import.meta.env.VITE_API_URL || 'https://chatgpt-clone-web-service.onrender.com';
 
-export default function App() {
-  const [token, setToken] = useState(localStorage.getItem('token') || '');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLogin, setIsLogin] = useState(true);
-
+function App() {
   const [chats, setChats] = useState([]);
-  const [activeChatId, setActiveChatId] = useState(null);
+  const [currentChatId, setCurrentChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const chatEndRef = useRef(null);
+
+  // Auto scroll to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Load chat history list for sidebar
+  const fetchChatHistory = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const res = await fetch(`${API_URL}/api/chat/history`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setChats(data);
+      }
+    } catch (err) {
+      console.error('Error loading history:', err);
+    }
+  };
 
   useEffect(() => {
-    if (token) fetchChats();
-  }, [token]);
+    fetchChatHistory();
+  }, []);
 
-  const fetchChats = async () => {
+  // Load single chat messages
+  const selectChat = async (chatId) => {
     try {
-      const res = await axios.get(`${API_BASE}/chat/history`, {
-        headers: { Authorization: `Bearer ${token}` }
+      const token = localStorage.getItem('token');
+      setCurrentChatId(chatId);
+      const res = await fetch(`${API_URL}/api/chat/${chatId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-      setChats(res.data);
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data.messages || []);
+      }
     } catch (err) {
-      console.error(err);
+      console.error('Error fetching chat details:', err);
     }
   };
 
-  const fetchSingleChat = async (id) => {
-    try {
-      setActiveChatId(id);
-      const res = await axios.get(`${API_BASE}/chat/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setMessages(res.data.messages || []);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleAuth = async (e) => {
-    e.preventDefault();
-    const endpoint = isLogin ? '/auth/login' : '/auth/signup';
-    try {
-      const res = await axios.post(`${API_BASE}${endpoint}`, { email, password });
-      localStorage.setItem('token', res.data.token);
-      setToken(res.data.token);
-    } catch (err) {
-      alert(err.response?.data?.error || 'Authentication failed');
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    setToken('');
-    setMessages([]);
-    setActiveChatId(null);
-  };
-
+  // Start New Chat
   const startNewChat = () => {
-    setActiveChatId(null);
+    setCurrentChatId(null);
     setMessages([]);
   };
 
-  // Streaming Message Handler with Error Checks
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!input.trim() || loading) return;
+  // Delete Chat Function
+  const handleDeleteChat = async (e, chatId) => {
+    e.stopPropagation(); // Event bubble na ho taaki chat select na ho jaye
 
-    const userPrompt = input;
-    setInput('');
-    setLoading(true);
-
-    // Instant UI update
-    setMessages(prev => [
-      ...prev,
-      { role: 'user', content: userPrompt },
-      { role: 'assistant', content: '' }
-    ]);
+    if (!window.confirm("Kya aap iss chat ko delete karna chahte hain?")) return;
 
     try {
-      const response = await fetch(`${API_BASE}/chat/message`, {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/chat/${chatId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (res.ok) {
+        // UI se instant remove karo
+        setChats(prevChats => prevChats.filter(c => c._id !== chatId));
+
+        // Agar active open chat hi delete hui hai toh screen clear karo
+        if (currentChatId === chatId) {
+          setCurrentChatId(null);
+          setMessages([]);
+        }
+      } else {
+        alert("Delete fail ho gaya. Kripya firse try karein.");
+      }
+    } catch (err) {
+      console.error("Delete Error:", err);
+    }
+  };
+
+  // Send Message with SSE Streaming
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!input.trim() || isStreaming) return;
+
+    const userPrompt = input.trim();
+    setInput('');
+    setIsStreaming(true);
+
+    // Append user prompt to UI instantly
+    const newMessages = [...messages, { role: 'user', content: userPrompt }];
+    setMessages(newMessages);
+
+    // Temporary placeholder for streaming AI response
+    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/chat/message`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ chatId: activeChatId, prompt: userPrompt })
+        body: JSON.stringify({
+          chatId: currentChatId,
+          prompt: userPrompt
+        })
       });
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        alert(errData.error || 'Server error occurred while streaming response.');
-        setMessages(prev => prev.slice(0, -1)); // Remove blank message
-        setLoading(false);
+        const errData = await response.json();
+        alert(errData.error || 'Failed to get response');
+        setIsStreaming(false);
         return;
       }
 
       const reader = response.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let aiText = '';
+      const decoder = new TextDecoder();
+      let done = false;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      while (!done) {
+        const { value, done: doneReading } = await reader.read();
+        done = doneReading;
+        const chunkValue = decoder.decode(value);
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
-
+        const lines = chunkValue.split('\n\n');
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const dataStr = line.replace('data: ', '').trim();
-            if (dataStr === '[DONE]') break;
+            if (dataStr === '[DONE]') {
+              setIsStreaming(false);
+              fetchChatHistory(); // Sidebar list refresh
+              break;
+            }
 
             try {
               const parsed = JSON.parse(dataStr);
+              if (parsed.chatId && !currentChatId) {
+                setCurrentChatId(parsed.chatId);
+              }
               if (parsed.text) {
-                aiText += parsed.text;
-
                 setMessages(prev => {
                   const updated = [...prev];
-                  updated[updated.length - 1] = {
-                    role: 'assistant',
-                    content: aiText
-                  };
+                  const lastIndex = updated.length - 1;
+                  if (lastIndex >= 0 && updated[lastIndex].role === 'assistant') {
+                    updated[lastIndex] = {
+                      ...updated[lastIndex],
+                      content: updated[lastIndex].content + parsed.text
+                    };
+                  }
                   return updated;
                 });
-
-                if (parsed.chatId && !activeChatId) {
-                  setActiveChatId(parsed.chatId);
-                  fetchChats();
-                }
               }
             } catch (err) {
-              // Ignore partial JSON parse chunks
+              // Ignore parse chunk fragments
             }
           }
         }
       }
     } catch (err) {
       console.error('Streaming error:', err);
-      alert('Network error: ' + err.message);
     } finally {
-      setLoading(false);
+      setIsStreaming(false);
     }
   };
 
-  // Auth View
-  if (!token) {
-    return (
-      <div style={{ display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center', backgroundColor: '#212121', color: '#fff' }}>
-        <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '320px', padding: '30px', backgroundColor: '#2f2f2f', borderRadius: '8px' }}>
-          <h2>{isLogin ? 'Login' : 'Sign Up'}</h2>
-          <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required style={{ padding: '12px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#171717', color: '#fff' }} />
-          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required style={{ padding: '12px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#171717', color: '#fff' }} />
-          <button type="submit" style={{ padding: '12px', backgroundColor: '#10a37f', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-            {isLogin ? 'Login' : 'Sign Up'}
-          </button>
-          <p style={{ fontSize: '14px', cursor: 'pointer', textAlign: 'center', color: '#ccc' }} onClick={() => setIsLogin(!isLogin)}>
-            {isLogin ? 'Need an account? Sign Up' : 'Already have an account? Login'}
-          </p>
-        </form>
-      </div>
-    );
-  }
-
-  // Main UI
   return (
-    <div style={{ display: 'flex', height: '100vh', backgroundColor: '#212121', color: '#ececec', fontFamily: 'sans-serif' }}>
+    <div className="app-container" style={{ display: 'flex', height: '100vh', backgroundColor: '#1e1e1e', color: '#fff' }}>
+      
       {/* Sidebar */}
-      <div style={{ width: '260px', backgroundColor: '#171717', padding: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-        <div>
-          <button onClick={startNewChat} style={{ width: '100%', padding: '12px', backgroundColor: '#212121', color: '#fff', border: '1px solid #444', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', marginBottom: '15px' }}>
-            + New Chat
-          </button>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', maxHeight: '75vh' }}>
-            {chats.map(c => (
-              <div key={c._id} onClick={() => fetchSingleChat(c._id)} style={{ padding: '10px', borderRadius: '4px', cursor: 'pointer', backgroundColor: activeChatId === c._id ? '#212121' : 'transparent', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {c.title}
-              </div>
-            ))}
-          </div>
-        </div>
-        <button onClick={handleLogout} style={{ padding: '10px', backgroundColor: '#d9534f', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-          Sign Out
+      <div className="sidebar" style={{ width: '260px', backgroundColor: '#181818', padding: '15px', display: 'flex', flexDirection: 'column', borderRight: '1px solid #333' }}>
+        <button 
+          onClick={startNewChat}
+          style={{ width: '100%', padding: '10px', backgroundColor: '#2b2b2b', color: '#fff', border: '1px solid #444', borderRadius: '5px', cursor: 'pointer', marginBottom: '15px' }}
+        >
+          + New Chat
         </button>
-      </div>
 
-      {/* Chat Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '30px 100px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {messages.length === 0 && (
-            <div style={{ textAlign: 'center', marginTop: '100px', color: '#8e8e93' }}>
-              <h1>ChatGPT Clone</h1>
-              <p>Start typing a message below...</p>
-            </div>
-          )}
-          {messages.map((m, idx) => (
-            <div key={idx} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%', padding: '14px 18px', borderRadius: '12px', backgroundColor: m.role === 'user' ? '#2f2f2f' : '#171717', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
-              <strong>{m.role === 'user' ? 'You' : 'AI'}:</strong> {m.content || (loading && idx === messages.length - 1 ? '...' : '')}
+        <div className="history-list" style={{ flex: 1, overflowY: 'auto' }}>
+          {chats.map(chat => (
+            <div 
+              key={chat._id}
+              onClick={() => selectChat(chat._id)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 10px',
+                marginBottom: '5px',
+                borderRadius: '5px',
+                cursor: 'pointer',
+                backgroundColor: currentChatId === chat._id ? '#343541' : 'transparent'
+              }}
+            >
+              <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '180px', fontSize: '14px' }}>
+                {chat.title}
+              </span>
+              
+              {/* Delete Icon Button */}
+              <button
+                onClick={(e) => handleDeleteChat(e, chat._id)}
+                style={{ background: 'none', border: 'none', color: '#ff5555', cursor: 'pointer', padding: '2px 5px', fontSize: '14px' }}
+                title="Delete Chat"
+              >
+                🗑️
+              </button>
             </div>
           ))}
         </div>
+      </div>
 
-        {/* Input Form */}
-        <form onSubmit={handleSendMessage} style={{ padding: '20px 100px', backgroundColor: '#212121' }}>
-          <div style={{ display: 'flex', backgroundColor: '#2f2f2f', borderRadius: '8px', padding: '8px 12px' }}>
-            <input type="text" placeholder="Send a message..." value={input} onChange={e => setInput(e.target.value)} style={{ flex: 1, border: 'none', outline: 'none', backgroundColor: 'transparent', color: '#fff', fontSize: '16px', padding: '8px' }} />
-            <button type="submit" disabled={loading} style={{ padding: '8px 20px', backgroundColor: '#10a37f', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-              Send
-            </button>
-          </div>
+      {/* Main Chat Panel */}
+      <div className="chat-main" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <div className="messages-container" style={{ flex: 1, padding: '20px', overflowY: 'auto' }}>
+          {messages.map((m, idx) => (
+            <div key={idx} style={{ marginBottom: '15px', textAlign: m.role === 'user' ? 'right' : 'left' }}>
+              <span style={{
+                display: 'inline-block',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                backgroundColor: m.role === 'user' ? '#0084ff' : '#2f2f2f',
+                maxWidth: '70%',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word'
+              }}>
+                {m.content}
+              </span>
+            </div>
+          ))}
+          <div ref={chatEndRef} />
+        </div>
+
+        {/* Input Bar */}
+        <form onSubmit={sendMessage} style={{ padding: '15px', backgroundColor: '#181818', display: 'flex', gap: '10px' }}>
+          <input 
+            type="text" 
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Send a message..."
+            style={{ flex: 1, padding: '10px', borderRadius: '5px', border: '1px solid #444', backgroundColor: '#2f2f2f', color: '#fff' }}
+          />
+          <button 
+            type="submit" 
+            disabled={isStreaming}
+            style={{ padding: '10px 20px', backgroundColor: '#10a37f', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
+          >
+            {isStreaming ? '...' : 'Send'}
+          </button>
         </form>
       </div>
+
     </div>
   );
 }
+
+export default App;
