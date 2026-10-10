@@ -57,10 +57,10 @@ Rules:
 
     const groq = new Groq({ apiKey });
 
-    // Stream from flagship Groq model
+    // Universal active model on Groq
     const stream = await groq.chat.completions.create({
       messages: finalMessages,
-      model: 'llama-3.3-70b-versatile',
+      model: 'llama-3.1-8b-instant',
       stream: true,
     });
 
