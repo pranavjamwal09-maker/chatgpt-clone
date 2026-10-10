@@ -97,6 +97,7 @@ function App() {
     setInput('');
     setIsStreaming(true);
 
+    // Push user prompt & placeholder
     setMessages(prev => [...prev, { role: 'user', content: userPrompt }, { role: 'assistant', content: '' }]);
 
     try {
@@ -117,6 +118,8 @@ function App() {
         const errData = await response.json();
         alert(errData.error || 'Failed to get response');
         setIsStreaming(false);
+        // Clear empty assistant boxes on error
+        setMessages(prev => prev.filter(m => m.content !== ''));
         return;
       }
 
@@ -158,13 +161,14 @@ function App() {
                 });
               }
             } catch (err) {
-              // Fragment handling
+              // Ignore fragment parse errors
             }
           }
         }
       }
     } catch (err) {
       console.error('Streaming error:', err);
+      setMessages(prev => prev.filter(m => m.content !== ''));
     } finally {
       setIsStreaming(false);
     }
@@ -203,7 +207,7 @@ function App() {
                 💬 {chat.title}
               </span>
               
-              {/* Red Delete Button */}
+              {/* Delete Button */}
               <button
                 onClick={(e) => handleDeleteChat(e, chat._id)}
                 style={{
@@ -238,9 +242,11 @@ function App() {
                 backgroundColor: m.role === 'user' ? '#0084ff' : '#2f2f2f',
                 maxWidth: '70%',
                 whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word'
+                wordBreak: 'break-word',
+                color: m.content ? '#fff' : '#8e8e93',
+                fontStyle: m.content ? 'normal' : 'italic'
               }}>
-                {m.content}
+                {m.content || (m.role === 'assistant' ? 'Thinking...' : '')}
               </span>
             </div>
           ))}
