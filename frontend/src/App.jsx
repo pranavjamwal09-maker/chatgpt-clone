@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://chatgpt-clone-web-service.onrender.com';
-
+const API_URL = import.meta.env.VITE_API_URL || 'https://chatgpt-clone-xx1j.onrender.com';
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [chats, setChats] = useState([]);
