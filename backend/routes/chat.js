@@ -6,15 +6,17 @@ const Groq = require('groq-sdk');
 
 const router = express.Router();
 
-// Send Message with SSE Streaming & Guaranteed MongoDB Persistence
+// Send Message with Guaranteed Background Persistence on Disconnect
 router.post('/message', auth, async (req, res) => {
+  let chatIdToUse = req.body.chatId;
+  const prompt = req.body.prompt;
+
   try {
-    const { chatId, prompt } = req.body;
     let chat = null;
 
-    // 1. Fetch existing chat or create a new one immediately in MongoDB
-    if (chatId && mongoose.Types.ObjectId.isValid(chatId)) {
-      chat = await Chat.findOne({ _id: chatId, userId: req.user.id });
+    // 1. Fetch existing chat or create new one
+    if (chatIdToUse && mongoose.Types.ObjectId.isValid(chatIdToUse)) {
+      chat = await Chat.findOne({ _id: chatIdToUse, userId: req.user.id });
     }
 
     if (!chat) {
@@ -23,27 +25,31 @@ router.post('/message', auth, async (req, res) => {
         title: prompt.substring(0, 30) + '...',
         messages: []
       });
+      await chat.save();
     }
+    chatIdToUse = chat._id;
 
-    // Save user prompt immediately into MongoDB before streaming starts
-    chat.messages.push({ role: 'user', content: prompt });
-    await chat.save();
+    // Save User message atomically to MongoDB
+    await Chat.findByIdAndUpdate(chatIdToUse, {
+      $push: { messages: { role: 'user', content: prompt } }
+    });
 
     // Clean API Key
     const rawKey = process.env.GROQ_API_KEY || '';
     const apiKey = rawKey.replace(/[^a-zA-Z0-9_]/g, '').trim();
 
     if (!apiKey) {
-      return res.status(400).json({ error: 'GROQ_API_KEY is missing or invalid in Render environment variables' });
+      return res.status(400).json({ error: 'GROQ_API_KEY is missing in Render environment variables' });
     }
 
-    // Format chat history for Groq context
-    const formattedMessages = chat.messages.map(m => ({
+    // Refresh chat messages for context
+    const updatedChat = await Chat.findById(chatIdToUse);
+    const formattedMessages = updatedChat.messages.map(m => ({
       role: m.role === 'user' ? 'user' : 'assistant',
       content: m.content || ''
     }));
 
-    // System Instruction
+    // System Prompt
     const systemInstruction = {
       role: 'system',
       content: `You are a helpful, smart AI assistant.
@@ -54,11 +60,7 @@ Rules:
 4. Format all text cleanly using standard Markdown.`
     };
 
-    const finalMessages = [
-      systemInstruction,
-      ...formattedMessages
-    ];
-
+    const finalMessages = [systemInstruction, ...formattedMessages];
     const groq = new Groq({ apiKey });
 
     // Fallback active models
@@ -66,14 +68,12 @@ Rules:
       'llama-3.3-70b-versatile',
       'llama-3.1-8b-instant',
       'llama-3.2-3b-preview',
-      'gemma2-9b-it',
-      'qwen-2.5-coder-32b'
+      'gemma2-9b-it'
     ];
 
-    // Fetch live active models dynamically
     try {
       const availableModels = await groq.models.list();
-      if (availableModels && availableModels.data && availableModels.data.length > 0) {
+      if (availableModels?.data?.length > 0) {
         const activeFetched = availableModels.data
           .map(m => m.id)
           .filter(id => !id.includes('whisper') && !id.includes('guard') && !id.includes('mixtral-8x7b') && !id.includes('llama3-8b-8192'));
@@ -81,8 +81,8 @@ Rules:
           candidateModels = [...activeFetched, ...candidateModels];
         }
       }
-    } catch (modelListErr) {
-      console.warn('Could not fetch dynamic model list:', modelListErr.message);
+    } catch (modelErr) {
+      console.warn('Dynamic model fetch skipped:', modelErr.message);
     }
 
     let stream = null;
@@ -102,10 +102,10 @@ Rules:
     }
 
     if (!stream) {
-      throw lastError || new Error('All candidate Groq models failed');
+      throw lastError || new Error('All Groq candidate models failed');
     }
 
-    // Set headers for SSE & Disable Render proxy buffering
+    // Set SSE Headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -113,37 +113,52 @@ Rules:
     if (res.flushHeaders) res.flushHeaders();
 
     let fullAiText = '';
+    let isClientConnected = true;
 
-    // Stream chunks to frontend
+    // Track client disconnection (when user switches chat mid-stream)
+    req.on('close', () => {
+      isClientConnected = false;
+    });
+
+    // Stream chunks
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content || '';
       if (content) {
         fullAiText += content;
-        res.write(`data: ${JSON.stringify({ text: content, chatId: chat._id })}\n\n`);
+        if (isClientConnected && !res.writableEnded) {
+          try {
+            res.write(`data: ${JSON.stringify({ text: content, chatId: chatIdToUse })}\n\n`);
+          } catch (writeErr) {
+            isClientConnected = false;
+          }
+        }
       }
     }
 
-    // 2. Save full AI response into MongoDB after stream completes
+    // Always persist full AI response to MongoDB even if client disconnected early
     if (fullAiText.trim()) {
-      chat.messages.push({ role: 'assistant', content: fullAiText });
-      await chat.save();
+      await Chat.findByIdAndUpdate(chatIdToUse, {
+        $push: { messages: { role: 'assistant', content: fullAiText } }
+      });
     }
 
-    res.write('data: [DONE]\n\n');
-    res.end();
+    if (isClientConnected && !res.writableEnded) {
+      res.write('data: [DONE]\n\n');
+      res.end();
+    }
 
   } catch (err) {
-    console.error('=== STREAMING CHAT ERROR ===\n', err);
+    console.error('=== STREAMING ERROR ===\n', err);
     if (!res.headersSent) {
       res.status(500).json({ error: err.message || 'Server Error' });
-    } else {
+    } else if (!res.writableEnded) {
       res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
       res.end();
     }
   }
 });
 
-// Get All User Chats (Sidebar)
+// Get All User Chats
 router.get('/history', auth, async (req, res) => {
   try {
     const chats = await Chat.find({ userId: req.user.id }).select('title createdAt updatedAt').sort({ updatedAt: -1 });
