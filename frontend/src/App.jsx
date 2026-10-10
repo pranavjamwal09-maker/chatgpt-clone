@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://chatgpt-clone-xx1j.onrender.com';
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [chats, setChats] = useState([]);
@@ -9,7 +10,7 @@ function App() {
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   
-  // Auth Form State (Login/Register)
+  // Auth Form State
   const [isLoginView, setIsLoginView] = useState(true);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -18,12 +19,10 @@ function App() {
 
   const chatEndRef = useRef(null);
 
-  // Auto scroll to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Load chat history for sidebar when logged in
   const fetchChatHistory = async () => {
     if (!token) return;
     try {
@@ -49,7 +48,6 @@ function App() {
     }
   }, [token]);
 
-  // Sign Out Handler
   const handleSignOut = () => {
     localStorage.removeItem('token');
     setToken('');
@@ -58,7 +56,6 @@ function App() {
     setMessages([]);
   };
 
-  // Login / Register Submission
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -92,7 +89,6 @@ function App() {
     }
   };
 
-  // Load single chat messages
   const selectChat = async (chatId) => {
     try {
       setCurrentChatId(chatId);
@@ -108,16 +104,15 @@ function App() {
     }
   };
 
-  // Start New Chat
   const startNewChat = () => {
     setCurrentChatId(null);
     setMessages([]);
   };
 
-  // Delete Chat
+  // Sleek Delete with English Confirmation
   const handleDeleteChat = async (e, chatId) => {
     e.stopPropagation();
-    if (!window.confirm("Kya aap iss chat ko delete karna chahte hain?")) return;
+    if (!window.confirm("Are you sure you want to delete this chat?")) return;
 
     try {
       const res = await fetch(`${API_URL}/api/chat/${chatId}`, {
@@ -132,14 +127,13 @@ function App() {
           setMessages([]);
         }
       } else {
-        alert("Delete failed! Server error.");
+        alert("Failed to delete chat.");
       }
     } catch (err) {
       console.error("Delete Error:", err);
     }
   };
 
-  // Send Message with SSE Streaming
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
@@ -148,7 +142,6 @@ function App() {
     setInput('');
     setIsStreaming(true);
 
-    // Push user message and assistant placeholder
     setMessages(prev => [...prev, { role: 'user', content: userPrompt }, { role: 'assistant', content: '' }]);
 
     try {
@@ -222,7 +215,7 @@ function App() {
                 });
               }
             } catch (err) {
-              // Fragment chunk parsing ignore
+              // Ignore chunk fragments
             }
           }
         }
@@ -235,7 +228,6 @@ function App() {
     }
   };
 
-  // IF NOT LOGGED IN -> RENDER LOGIN / REGISTER VIEW
   if (!token) {
     return (
       <div style={{ display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center', backgroundColor: '#1e1e1e', color: '#fff', fontFamily: 'sans-serif' }}>
@@ -285,7 +277,6 @@ function App() {
     );
   }
 
-  // LOGGED IN CHAT INTERFACE
   return (
     <div style={{ display: 'flex', height: '100vh', backgroundColor: '#1e1e1e', color: '#fff', fontFamily: 'sans-serif' }}>
       
@@ -298,7 +289,7 @@ function App() {
           + New Chat
         </button>
 
-        {/* Chat History List */}
+        {/* Sidebar Chat List */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {chats.map(chat => (
             <div 
@@ -308,53 +299,57 @@ function App() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '10px',
+                padding: '10px 12px',
                 marginBottom: '6px',
                 borderRadius: '6px',
                 cursor: 'pointer',
                 backgroundColor: currentChatId === chat._id ? '#343541' : '#202123',
-                gap: '8px'
+                gap: '8px',
+                transition: 'background-color 0.2s'
               }}
             >
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '14px' }}>
                 💬 {chat.title}
               </span>
               
-              {/* Red Delete Button */}
+              {/* Minimalist Trash Icon Toggle */}
               <button
                 onClick={(e) => handleDeleteChat(e, chat._id)}
                 style={{
-                  backgroundColor: '#ff4d4d',
-                  color: '#ffffff',
+                  background: 'transparent',
                   border: 'none',
-                  borderRadius: '4px',
+                  color: '#8e8e93',
                   cursor: 'pointer',
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  flexShrink: 0
+                  padding: '2px 6px',
+                  fontSize: '14px',
+                  borderRadius: '4px',
+                  flexShrink: 0,
+                  transition: 'color 0.2s'
                 }}
+                onMouseEnter={(e) => e.target.style.color = '#ff4d4d'}
+                onMouseLeave={(e) => e.target.style.color = '#8e8e93'}
                 title="Delete Chat"
               >
-                Delete
+                🗑️
               </button>
             </div>
           ))}
         </div>
 
-        {/* Sidebar Bottom: Sign Out Button */}
+        {/* Sidebar Footer */}
         <div style={{ paddingTop: '15px', borderTop: '1px solid #333' }}>
           <button 
             onClick={handleSignOut}
             style={{
               width: '100%',
               padding: '10px',
-              backgroundColor: '#8b0000',
-              color: '#ffffff',
-              border: 'none',
+              backgroundColor: '#2b2b2b',
+              color: '#ff4d4d',
+              border: '1px solid #444',
               borderRadius: '6px',
               cursor: 'pointer',
-              fontWeight: 'bold'
+              fontWeight: 'bold',
+              transition: 'background-color 0.2s'
             }}
           >
             Sign Out
