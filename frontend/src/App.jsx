@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import './App.css'; // Make sure styling is imported
+import './App.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://chatgpt-clone-web-service.onrender.com';
 
@@ -60,9 +60,9 @@ function App() {
     setMessages([]);
   };
 
-  // Delete Chat Function
+  // Guaranteed Delete Chat Function
   const handleDeleteChat = async (e, chatId) => {
-    e.stopPropagation(); // Event bubble na ho taaki chat select na ho jaye
+    e.stopPropagation(); // Chat click triggering stop
 
     if (!window.confirm("Kya aap iss chat ko delete karna chahte hain?")) return;
 
@@ -76,16 +76,16 @@ function App() {
       });
 
       if (res.ok) {
-        // UI se instant remove karo
+        // UI se instant delete karo
         setChats(prevChats => prevChats.filter(c => c._id !== chatId));
 
-        // Agar active open chat hi delete hui hai toh screen clear karo
+        // Agar vahi chat open thi toh view clear karo
         if (currentChatId === chatId) {
           setCurrentChatId(null);
           setMessages([]);
         }
       } else {
-        alert("Delete fail ho gaya. Kripya firse try karein.");
+        alert("Delete failed! Server error.");
       }
     } catch (err) {
       console.error("Delete Error:", err);
@@ -101,11 +101,10 @@ function App() {
     setInput('');
     setIsStreaming(true);
 
-    // Append user prompt to UI instantly
     const newMessages = [...messages, { role: 'user', content: userPrompt }];
     setMessages(newMessages);
 
-    // Temporary placeholder for streaming AI response
+    // AI placeholder
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
     try {
@@ -144,7 +143,7 @@ function App() {
             const dataStr = line.replace('data: ', '').trim();
             if (dataStr === '[DONE]') {
               setIsStreaming(false);
-              fetchChatHistory(); // Sidebar list refresh
+              fetchChatHistory();
               break;
             }
 
@@ -167,7 +166,7 @@ function App() {
                 });
               }
             } catch (err) {
-              // Ignore parse chunk fragments
+              // Fragment handling
             }
           }
         }
@@ -180,13 +179,13 @@ function App() {
   };
 
   return (
-    <div className="app-container" style={{ display: 'flex', height: '100vh', backgroundColor: '#1e1e1e', color: '#fff' }}>
+    <div className="app-container" style={{ display: 'flex', height: '100vh', backgroundColor: '#1e1e1e', color: '#fff', fontFamily: 'sans-serif' }}>
       
       {/* Sidebar */}
-      <div className="sidebar" style={{ width: '260px', backgroundColor: '#181818', padding: '15px', display: 'flex', flexDirection: 'column', borderRight: '1px solid #333' }}>
+      <div className="sidebar" style={{ width: '280px', backgroundColor: '#181818', padding: '15px', display: 'flex', flexDirection: 'column', borderRight: '1px solid #333' }}>
         <button 
           onClick={startNewChat}
-          style={{ width: '100%', padding: '10px', backgroundColor: '#2b2b2b', color: '#fff', border: '1px solid #444', borderRadius: '5px', cursor: 'pointer', marginBottom: '15px' }}
+          style={{ width: '100%', padding: '12px', backgroundColor: '#2b2b2b', color: '#fff', border: '1px solid #444', borderRadius: '6px', cursor: 'pointer', marginBottom: '15px', fontWeight: 'bold' }}
         >
           + New Chat
         </button>
@@ -200,24 +199,35 @@ function App() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '8px 10px',
-                marginBottom: '5px',
-                borderRadius: '5px',
+                padding: '10px',
+                marginBottom: '6px',
+                borderRadius: '6px',
                 cursor: 'pointer',
-                backgroundColor: currentChatId === chat._id ? '#343541' : 'transparent'
+                backgroundColor: currentChatId === chat._id ? '#343541' : '#202123',
+                gap: '8px'
               }}
             >
-              <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '180px', fontSize: '14px' }}>
-                {chat.title}
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '14px' }}>
+                💬 {chat.title}
               </span>
               
-              {/* Delete Icon Button */}
+              {/* Highlighted Delete Button */}
               <button
                 onClick={(e) => handleDeleteChat(e, chat._id)}
-                style={{ background: 'none', border: 'none', color: '#ff5555', cursor: 'pointer', padding: '2px 5px', fontSize: '14px' }}
+                style={{
+                  backgroundColor: '#ff4d4d',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  flexShrink: 0
+                }}
                 title="Delete Chat"
               >
-                🗑️
+                Delete
               </button>
             </div>
           ))}
@@ -252,12 +262,12 @@ function App() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Send a message..."
-            style={{ flex: 1, padding: '10px', borderRadius: '5px', border: '1px solid #444', backgroundColor: '#2f2f2f', color: '#fff' }}
+            style={{ flex: 1, padding: '12px', borderRadius: '6px', border: '1px solid #444', backgroundColor: '#2f2f2f', color: '#fff', fontSize: '15px' }}
           />
           <button 
             type="submit" 
             disabled={isStreaming}
-            style={{ padding: '10px 20px', backgroundColor: '#10a37f', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
+            style={{ padding: '12px 24px', backgroundColor: '#10a37f', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
           >
             {isStreaming ? '...' : 'Send'}
           </button>
