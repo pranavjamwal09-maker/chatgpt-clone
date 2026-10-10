@@ -6,12 +6,13 @@ const Groq = require('groq-sdk');
 
 const router = express.Router();
 
-// Send Message with SSE Streaming & Dynamic Active Model Auto-Detection
+// Send Message with SSE Streaming & Guaranteed MongoDB Persistence
 router.post('/message', auth, async (req, res) => {
   try {
     const { chatId, prompt } = req.body;
     let chat = null;
 
+    // 1. Fetch existing chat or create a new one immediately in MongoDB
     if (chatId && mongoose.Types.ObjectId.isValid(chatId)) {
       chat = await Chat.findOne({ _id: chatId, userId: req.user.id });
     }
@@ -24,7 +25,11 @@ router.post('/message', auth, async (req, res) => {
       });
     }
 
-    // Clean API key (removes spaces, quotes, newlines)
+    // Save user prompt immediately into MongoDB before streaming starts
+    chat.messages.push({ role: 'user', content: prompt });
+    await chat.save();
+
+    // Clean API Key
     const rawKey = process.env.GROQ_API_KEY || '';
     const apiKey = rawKey.replace(/[^a-zA-Z0-9_]/g, '').trim();
 
@@ -32,13 +37,13 @@ router.post('/message', auth, async (req, res) => {
       return res.status(400).json({ error: 'GROQ_API_KEY is missing or invalid in Render environment variables' });
     }
 
-    // Format previous messages for chat history
+    // Format chat history for Groq context
     const formattedMessages = chat.messages.map(m => ({
       role: m.role === 'user' ? 'user' : 'assistant',
-      content: m.content
+      content: m.content || ''
     }));
 
-    // Strict System Prompt
+    // System Instruction
     const systemInstruction = {
       role: 'system',
       content: `You are a helpful, smart AI assistant.
@@ -51,13 +56,12 @@ Rules:
 
     const finalMessages = [
       systemInstruction,
-      ...formattedMessages,
-      { role: 'user', content: prompt }
+      ...formattedMessages
     ];
 
     const groq = new Groq({ apiKey });
 
-    // Fallback list of known active models
+    // Fallback active models
     let candidateModels = [
       'llama-3.3-70b-versatile',
       'llama-3.1-8b-instant',
@@ -66,7 +70,7 @@ Rules:
       'qwen-2.5-coder-32b'
     ];
 
-    // Dynamically fetch live active models directly from Groq API
+    // Fetch live active models dynamically
     try {
       const availableModels = await groq.models.list();
       if (availableModels && availableModels.data && availableModels.data.length > 0) {
@@ -78,13 +82,12 @@ Rules:
         }
       }
     } catch (modelListErr) {
-      console.warn('Could not fetch dynamic model list, using fallback list:', modelListErr.message);
+      console.warn('Could not fetch dynamic model list:', modelListErr.message);
     }
 
     let stream = null;
     let lastError = null;
 
-    // Iterate through active models until connection succeeds
     for (const modelName of candidateModels) {
       try {
         stream = await groq.chat.completions.create({
@@ -92,13 +95,9 @@ Rules:
           model: modelName,
           stream: true,
         });
-        if (stream) {
-          console.log(`Streaming with active model: ${modelName}`);
-          break;
-        }
+        if (stream) break;
       } catch (err) {
         lastError = err;
-        console.warn(`Groq model ${modelName} failed (${err.message}), trying next candidate...`);
       }
     }
 
@@ -115,7 +114,7 @@ Rules:
 
     let fullAiText = '';
 
-    // Stream chunks in real-time
+    // Stream chunks to frontend
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content || '';
       if (content) {
@@ -124,10 +123,11 @@ Rules:
       }
     }
 
-    // Save conversation to MongoDB
-    chat.messages.push({ role: 'user', content: prompt });
-    chat.messages.push({ role: 'assistant', content: fullAiText });
-    await chat.save();
+    // 2. Save full AI response into MongoDB after stream completes
+    if (fullAiText.trim()) {
+      chat.messages.push({ role: 'assistant', content: fullAiText });
+      await chat.save();
+    }
 
     res.write('data: [DONE]\n\n');
     res.end();
@@ -143,10 +143,10 @@ Rules:
   }
 });
 
-// Get All User Chats
+// Get All User Chats (Sidebar)
 router.get('/history', auth, async (req, res) => {
   try {
-    const chats = await Chat.find({ userId: req.user.id }).select('title createdAt').sort({ updatedAt: -1 });
+    const chats = await Chat.find({ userId: req.user.id }).select('title createdAt updatedAt').sort({ updatedAt: -1 });
     res.json(chats);
   } catch (err) {
     res.status(500).json({ error: err.message });
