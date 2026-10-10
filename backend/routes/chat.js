@@ -6,7 +6,7 @@ const Groq = require('groq-sdk');
 
 const router = express.Router();
 
-// Send Message with SSE Streaming & Strict System Prompt
+// Send Message with SSE Streaming & Auto-Fallback Models
 router.post('/message', auth, async (req, res) => {
   try {
     const { chatId, prompt } = req.body;
@@ -24,7 +24,7 @@ router.post('/message', auth, async (req, res) => {
       });
     }
 
-    // Auto-clean API key (removes spaces, quotes, newlines)
+    // Clean API key (removes spaces, quotes, newlines)
     const rawKey = process.env.GROQ_API_KEY || '';
     const apiKey = rawKey.replace(/[^a-zA-Z0-9_]/g, '').trim();
 
@@ -38,7 +38,7 @@ router.post('/message', auth, async (req, res) => {
       content: m.content
     }));
 
-    // Strict System Prompt
+    // System Prompt
     const systemInstruction = {
       role: 'system',
       content: `You are a helpful, smart AI assistant.
@@ -57,12 +57,35 @@ Rules:
 
     const groq = new Groq({ apiKey });
 
-    // Universal active model on Groq
-    const stream = await groq.chat.completions.create({
-      messages: finalMessages,
-      model: 'llama-3.1-8b-instant',
-      stream: true,
-    });
+    // Active candidate models list for automatic fallback
+    const candidateModels = [
+      'llama3-8b-8192',
+      'llama-3.1-8b-instant',
+      'gemma2-9b-it',
+      'mixtral-8x7b-32768'
+    ];
+
+    let stream = null;
+    let lastError = null;
+
+    // Try each model automatically until one succeeds
+    for (const modelName of candidateModels) {
+      try {
+        stream = await groq.chat.completions.create({
+          messages: finalMessages,
+          model: modelName,
+          stream: true,
+        });
+        if (stream) break;
+      } catch (err) {
+        lastError = err;
+        console.warn(`Groq model ${modelName} failed, trying next candidate...`);
+      }
+    }
+
+    if (!stream) {
+      throw lastError || new Error('All candidate Groq models failed');
+    }
 
     // Set headers for SSE & Disable Render proxy buffering
     res.setHeader('Content-Type', 'text/event-stream');
