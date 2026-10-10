@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import './App.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://chatgpt-clone-web-service.onrender.com';
 
@@ -60,9 +59,9 @@ function App() {
     setMessages([]);
   };
 
-  // Guaranteed Delete Chat Function
+  // Delete Chat Function
   const handleDeleteChat = async (e, chatId) => {
-    e.stopPropagation(); // Chat click triggering stop
+    e.stopPropagation();
 
     if (!window.confirm("Kya aap iss chat ko delete karna chahte hain?")) return;
 
@@ -76,10 +75,7 @@ function App() {
       });
 
       if (res.ok) {
-        // UI se instant delete karo
-        setChats(prevChats => prevChats.filter(c => c._id !== chatId));
-
-        // Agar vahi chat open thi toh view clear karo
+        setChats(prev => prev.filter(c => c._id !== chatId));
         if (currentChatId === chatId) {
           setCurrentChatId(null);
           setMessages([]);
@@ -101,11 +97,7 @@ function App() {
     setInput('');
     setIsStreaming(true);
 
-    const newMessages = [...messages, { role: 'user', content: userPrompt }];
-    setMessages(newMessages);
-
-    // AI placeholder
-    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+    setMessages(prev => [...prev, { role: 'user', content: userPrompt }, { role: 'assistant', content: '' }]);
 
     try {
       const token = localStorage.getItem('token');
@@ -179,10 +171,10 @@ function App() {
   };
 
   return (
-    <div className="app-container" style={{ display: 'flex', height: '100vh', backgroundColor: '#1e1e1e', color: '#fff', fontFamily: 'sans-serif' }}>
+    <div style={{ display: 'flex', height: '100vh', backgroundColor: '#1e1e1e', color: '#fff', fontFamily: 'sans-serif' }}>
       
       {/* Sidebar */}
-      <div className="sidebar" style={{ width: '280px', backgroundColor: '#181818', padding: '15px', display: 'flex', flexDirection: 'column', borderRight: '1px solid #333' }}>
+      <div style={{ width: '280px', backgroundColor: '#181818', padding: '15px', display: 'flex', flexDirection: 'column', borderRight: '1px solid #333' }}>
         <button 
           onClick={startNewChat}
           style={{ width: '100%', padding: '12px', backgroundColor: '#2b2b2b', color: '#fff', border: '1px solid #444', borderRadius: '6px', cursor: 'pointer', marginBottom: '15px', fontWeight: 'bold' }}
@@ -190,7 +182,7 @@ function App() {
           + New Chat
         </button>
 
-        <div className="history-list" style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
           {chats.map(chat => (
             <div 
               key={chat._id}
@@ -211,7 +203,7 @@ function App() {
                 💬 {chat.title}
               </span>
               
-              {/* Highlighted Delete Button */}
+              {/* Red Delete Button */}
               <button
                 onClick={(e) => handleDeleteChat(e, chat._id)}
                 style={{
@@ -234,9 +226,9 @@ function App() {
         </div>
       </div>
 
-      {/* Main Chat Panel */}
-      <div className="chat-main" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div className="messages-container" style={{ flex: 1, padding: '20px', overflowY: 'auto' }}>
+      {/* Main Chat Area */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, padding: '20px', overflowY: 'auto' }}>
           {messages.map((m, idx) => (
             <div key={idx} style={{ marginBottom: '15px', textAlign: m.role === 'user' ? 'right' : 'left' }}>
               <span style={{
