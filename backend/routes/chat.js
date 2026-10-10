@@ -24,9 +24,12 @@ router.post('/message', auth, async (req, res) => {
       });
     }
 
-    const apiKey = process.env.GROQ_API_KEY ? process.env.GROQ_API_KEY.trim() : '';
+    // Auto-clean API key (removes spaces, quotes, newlines)
+    const rawKey = process.env.GROQ_API_KEY || '';
+    const apiKey = rawKey.replace(/[^a-zA-Z0-9_]/g, '').trim();
+
     if (!apiKey) {
-      return res.status(400).json({ error: 'GROQ_API_KEY is missing in Render environment variables' });
+      return res.status(400).json({ error: 'GROQ_API_KEY is missing or invalid in Render environment variables' });
     }
 
     // Format previous messages for chat history
@@ -54,7 +57,7 @@ Rules:
 
     const groq = new Groq({ apiKey });
 
-    // Direct stream call to active flagship Groq model
+    // Stream from flagship Groq model
     const stream = await groq.chat.completions.create({
       messages: finalMessages,
       model: 'llama-3.3-70b-versatile',
@@ -70,7 +73,7 @@ Rules:
 
     let fullAiText = '';
 
-    // Stream chunks in real-time to frontend
+    // Stream chunks in real-time
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content || '';
       if (content) {
@@ -79,7 +82,7 @@ Rules:
       }
     }
 
-    // Save full conversation to MongoDB after stream ends
+    // Save conversation to MongoDB
     chat.messages.push({ role: 'user', content: prompt });
     chat.messages.push({ role: 'assistant', content: fullAiText });
     await chat.save();
@@ -98,7 +101,7 @@ Rules:
   }
 });
 
-// Get All User Chats (Sidebar)
+// Get All User Chats
 router.get('/history', auth, async (req, res) => {
   try {
     const chats = await Chat.find({ userId: req.user.id }).select('title createdAt').sort({ updatedAt: -1 });
