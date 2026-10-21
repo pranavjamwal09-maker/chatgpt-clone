@@ -55,32 +55,37 @@ router.post('/message', auth, async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    const contents = chat.messages.map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }]
-    }));
+    // Format messages for OpenAI-compatible NVIDIA API
+    const messages = [
+      { role: 'system', content: 'You are a helpful AI assistant. Always respond naturally in the exact same language, script, or style as the user prompt.' },
+      ...chat.messages.map(m => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content
+      }))
+    ];
 
-    // Using environment variable securely
-    const token = process.env.GEMINI_API_KEY;
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:streamGenerateContent?alt=sse`;
+    const apiKey = process.env.NVIDIA_API_KEY || process.env.GEMINI_API_KEY;
+    const url = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
     const apiResponse = await fetch(url, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        contents: contents,
-        systemInstruction: {
-          parts: [{ text: "You are a helpful AI assistant. Always respond naturally in the exact same language, script, or style as the user prompt." }]
-        }
+        model: 'meta/llama-3.1-8b-instruct',
+        messages: messages,
+        temperature: 0.5,
+        top_p: 1,
+        max_tokens: 1024,
+        stream: true
       })
     });
 
     if (!apiResponse.ok) {
       const errText = await apiResponse.text();
-      throw new Error(`Gemini API Error: ${errText}`);
+      throw new Error(`NVIDIA API Error: ${errText}`);
     }
 
     let fullAssistantMessage = '';
@@ -95,13 +100,13 @@ router.post('/message', auth, async (req, res) => {
           if (jsonStr === '[DONE]') continue;
           try {
             const parsed = JSON.parse(jsonStr);
-            const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            const text = parsed.choices?.[0]?.delta?.content || '';
             if (text) {
               fullAssistantMessage += text;
               res.write(`data: ${JSON.stringify({ text: text, chatId: chat._id })}\n\n`);
             }
           } catch (e) {
-            // ignore
+            // ignore partial JSON parse errors
           }
         }
       }
@@ -115,7 +120,7 @@ router.post('/message', auth, async (req, res) => {
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (err) {
-    console.error("Gemini Stream Error:", err);
+    console.error("NVIDIA Stream Error:", err);
     if (!res.headersSent) {
       res.status(500).json({ error: err.message });
     } else {
