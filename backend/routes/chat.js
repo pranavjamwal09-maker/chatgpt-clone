@@ -73,7 +73,7 @@ router.post('/message', auth, async (req, res) => {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'mistralai/mixtral-8x7b-instruct-v0.1', // Updated to active Mixtral model on NVIDIA NIM
+        model: 'nvidia/llama-3.1-nemotron-70b-instruct', // Updated to active Nemotron model
         messages: messages,
         temperature: 0.5,
         top_p: 1,
