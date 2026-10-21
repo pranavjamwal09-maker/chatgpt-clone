@@ -73,7 +73,7 @@ router.post('/message', auth, async (req, res) => {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'meta/llama3-70b-instruct', // Most stable universal NVIDIA NIM model
+        model: 'meta/llama3-8b-instruct', // Verified working NVIDIA NIM model
         messages: messages,
         temperature: 0.5,
         top_p: 1,
