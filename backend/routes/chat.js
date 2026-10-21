@@ -55,7 +55,6 @@ router.post('/message', auth, async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    // Format messages for OpenAI-compatible NVIDIA API
     const messages = [
       { role: 'system', content: 'You are a helpful AI assistant. Always respond naturally in the exact same language, script, or style as the user prompt.' },
       ...chat.messages.map(m => ({
@@ -74,7 +73,7 @@ router.post('/message', auth, async (req, res) => {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'meta/llama-3.1-8b-instruct',
+        model: 'meta/llama-3.3-70b-instruct', // Updated to active model
         messages: messages,
         temperature: 0.5,
         top_p: 1,
@@ -106,7 +105,7 @@ router.post('/message', auth, async (req, res) => {
               res.write(`data: ${JSON.stringify({ text: text, chatId: chat._id })}\n\n`);
             }
           } catch (e) {
-            // ignore partial JSON parse errors
+            // ignore
           }
         }
       }
