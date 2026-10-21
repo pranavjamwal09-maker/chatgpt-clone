@@ -56,7 +56,7 @@ router.post('/message', auth, async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     const messages = [
-      { role: 'system', content: 'You are a helpful AI assistant. Always respond naturally in the exact same language, script, or style as the user prompt.' },
+      { role: 'system', content: 'You are a helpful AI assistant.' },
       ...chat.messages.map(m => ({
         role: m.role === 'assistant' ? 'assistant' : 'user',
         content: m.content
@@ -73,10 +73,9 @@ router.post('/message', auth, async (req, res) => {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'meta/llama3-8b-instruct', // Verified working NVIDIA NIM model
+        model: 'meta/llama3-8b-instruct',
         messages: messages,
         temperature: 0.5,
-        top_p: 1,
         max_tokens: 1024,
         stream: true
       })
@@ -84,6 +83,7 @@ router.post('/message', auth, async (req, res) => {
 
     if (!apiResponse.ok) {
       const errText = await apiResponse.text();
+      console.error("NVIDIA API Fail Response:", errText);
       throw new Error(`NVIDIA API Error: ${errText}`);
     }
 
