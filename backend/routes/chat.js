@@ -73,7 +73,7 @@ router.post('/message', auth, async (req, res) => {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'nvidia/llama-3.1-nemotron-70b-instruct', // Updated to active Nemotron model
+        model: 'meta/llama-3.2-3b-instruct', // Updated to active Llama 3.2 model
         messages: messages,
         temperature: 0.5,
         top_p: 1,
