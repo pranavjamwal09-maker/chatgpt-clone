@@ -63,7 +63,6 @@ router.post('/message', auth, async (req, res) => {
       }))
     ];
 
-    // Explicitly using NVIDIA_API_KEY from environment variables
     const apiKey = process.env.NVIDIA_API_KEY;
     const url = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
@@ -74,7 +73,7 @@ router.post('/message', auth, async (req, res) => {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'nvidia/llama-3.1-nemotron-70b-instruct', // Active and stable NVIDIA model
+        model: 'meta/llama3-70b-instruct', // Most stable universal NVIDIA NIM model
         messages: messages,
         temperature: 0.5,
         top_p: 1,
