@@ -73,11 +73,11 @@ router.post('/message', auth, async (req, res) => {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'deepseek-ai/deepseek-r1', // Updated to active DeepSeek-R1 model on NVIDIA NIM
+        model: 'mistralai/mixtral-8x7b-instruct-v0.1', // Updated to active Mixtral model on NVIDIA NIM
         messages: messages,
-        temperature: 0.6,
-        top_p: 0.7,
-        max_tokens: 2048,
+        temperature: 0.5,
+        top_p: 1,
+        max_tokens: 1024,
         stream: true
       })
     });
