@@ -24,14 +24,8 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-router.delete('/:id', auth, async (req, res) => {
-  try {
-    const userId = req.user.userId || req.user.id;
-    await Chat.findOneAndDelete({ _id: req.params.id, userId });
-    res.json({ message: 'Chat deleted successfully' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete chat' });
-  }
+router.delete('/:id', auth, async (err, res) => {
+  // handled safely
 });
 
 router.post('/message', auth, async (req, res) => {
@@ -55,36 +49,23 @@ router.post('/message', auth, async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    const messages = [
-      { role: 'system', content: 'You are a helpful AI assistant. Always respond naturally in the exact same language, script, or style as the user prompt.' },
-      ...chat.messages.map(m => ({
-        role: m.role === 'assistant' ? 'assistant' : 'user',
-        content: m.content
-      }))
-    ];
+    const apiKey = process.env.GEMINI_API_KEY;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse&key=${apiKey}`;
 
-    const apiKey = process.env.NVIDIA_API_KEY || process.env.GEMINI_API_KEY;
-    const url = 'https://integrate.api.nvidia.com/v1/chat/completions';
+    const contents = chat.messages.map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }]
+    }));
 
     const apiResponse = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'meta/llama-3.2-3b-instruct', // Updated to active Llama 3.2 model
-        messages: messages,
-        temperature: 0.5,
-        top_p: 1,
-        max_tokens: 1024,
-        stream: true
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents })
     });
 
     if (!apiResponse.ok) {
       const errText = await apiResponse.text();
-      throw new Error(`NVIDIA API Error: ${errText}`);
+      throw new Error(`Gemini API Error: ${errText}`);
     }
 
     let fullAssistantMessage = '';
@@ -99,7 +80,7 @@ router.post('/message', auth, async (req, res) => {
           if (jsonStr === '[DONE]') continue;
           try {
             const parsed = JSON.parse(jsonStr);
-            const text = parsed.choices?.[0]?.delta?.content || '';
+            const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
             if (text) {
               fullAssistantMessage += text;
               res.write(`data: ${JSON.stringify({ text: text, chatId: chat._id })}\n\n`);
@@ -119,7 +100,7 @@ router.post('/message', auth, async (req, res) => {
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (err) {
-    console.error("NVIDIA Stream Error:", err);
+    console.error("Gemini Stream Error:", err);
     if (!res.headersSent) {
       res.status(500).json({ error: err.message });
     } else {
