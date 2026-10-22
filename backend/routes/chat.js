@@ -56,7 +56,7 @@ router.post('/message', auth, async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     const messages = [
-      { role: 'system', content: 'You are a helpful AI assistant.' },
+      { role: 'system', content: 'You are a helpful AI assistant. Always respond naturally in the exact same language, script, or style as the user prompt.' },
       ...chat.messages.map(m => ({
         role: m.role === 'assistant' ? 'assistant' : 'user',
         content: m.content
@@ -73,9 +73,10 @@ router.post('/message', auth, async (req, res) => {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'meta/llama3-8b-instruct',
+        model: 'meta/llama-3.1-8b-instruct', // Active NVIDIA NIM model
         messages: messages,
         temperature: 0.5,
+        top_p: 1,
         max_tokens: 1024,
         stream: true
       })
