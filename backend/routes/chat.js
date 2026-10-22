@@ -63,7 +63,6 @@ router.post('/message', auth, async (req, res) => {
       }))
     ];
 
-    // Using Groq API - 100% stable, ultra-fast, zero function lookup errors
     const apiKey = process.env.GROQ_API_KEY || process.env.NVIDIA_API_KEY;
     const url = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -74,7 +73,7 @@ router.post('/message', auth, async (req, res) => {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
+        model: 'llama-3.3-70b-versatile', // Active and stable Groq model
         messages: messages,
         temperature: 0.5,
         max_tokens: 1024,
