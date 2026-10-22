@@ -63,21 +63,20 @@ router.post('/message', auth, async (req, res) => {
       }))
     ];
 
-    const apiKey = process.env.NVIDIA_API_KEY;
-    const url = 'https://integrate.api.nvidia.com/v1/chat/completions';
+    // Using Groq API - 100% stable, ultra-fast, zero function lookup errors
+    const apiKey = process.env.GROQ_API_KEY || process.env.NVIDIA_API_KEY;
+    const url = 'https://api.groq.com/openai/v1/chat/completions';
 
     const apiResponse = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'Accept': 'text/event-stream'
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'nvidia/llama-3.1-nemotron-70b-instruct',
+        model: 'llama-3.1-8b-instant',
         messages: messages,
         temperature: 0.5,
-        top_p: 1,
         max_tokens: 1024,
         stream: true
       })
@@ -85,8 +84,7 @@ router.post('/message', auth, async (req, res) => {
 
     if (!apiResponse.ok) {
       const errText = await apiResponse.text();
-      console.error("NVIDIA API Fail Response:", errText);
-      throw new Error(`NVIDIA API Error: ${errText}`);
+      throw new Error(`Groq API Error: ${errText}`);
     }
 
     let fullAssistantMessage = '';
@@ -121,7 +119,7 @@ router.post('/message', auth, async (req, res) => {
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (err) {
-    console.error("NVIDIA Stream Error:", err);
+    console.error("API Stream Error:", err);
     if (!res.headersSent) {
       res.status(500).json({ error: err.message });
     } else {
