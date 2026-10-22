@@ -70,10 +70,11 @@ router.post('/message', auth, async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': `Bearer ${apiKey}`,
+        'Accept': 'text/event-stream'
       },
       body: JSON.stringify({
-        model: 'google/gemma-2-9b-it', // Active NVIDIA NIM model
+        model: 'nvidia/llama-3.1-nemotron-70b-instruct',
         messages: messages,
         temperature: 0.5,
         top_p: 1,
