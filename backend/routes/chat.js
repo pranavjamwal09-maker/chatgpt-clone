@@ -73,7 +73,7 @@ router.post('/message', auth, async (req, res) => {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant', // Active Groq production model
+        model: 'llama-3.3-70b-versatile', // Updated active Groq production model
         messages: messages,
         temperature: 0.5,
         max_tokens: 1024,
