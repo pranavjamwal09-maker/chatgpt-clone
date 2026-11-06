@@ -73,7 +73,7 @@ router.post('/message', auth, async (req, res) => {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'deepseek-r1-distill-llama-70b', // Updated to active Groq model
+        model: 'llama-3.3-70b-versatile', // Active Groq production model
         messages: messages,
         temperature: 0.5,
         max_tokens: 1024,
